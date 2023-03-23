@@ -5,11 +5,11 @@ pub use events_statistic::{EventsStatistic, HourlyEventStatistic};
 
 #[cfg(test)]
 mod test {
-    use std::{sync::Arc, time::Duration, collections::HashMap};
+    use std::{sync::Arc, time::Duration};
 
     use approx::assert_abs_diff_eq;
     use quanta::Mock;
-    use rand::{rngs::ThreadRng, Rng, SeedableRng};
+    use rand::{Rng, SeedableRng};
     use rstest::{fixture, rstest};
 
     use crate::{EventsStatistic, HourlyEventStatistic};
@@ -50,11 +50,14 @@ mod test {
     #[rstest]
     fn single_event_per_minute(mut helper: Helper) {
         for _ in 0..60 {
-            helper.clock.increment(Duration::from_secs(60));
+            helper.clock.increment(MINUTE);
             for event in helper.events.iter() {
                 helper.stats.inc_event(event);
             }
         }
+        // We check (now - 1h; now] interval and had 59 1m advances since
+        //   the first event
+        helper.clock.increment(MINUTE - Duration::from_nanos(1));
 
         helper.each_equals(1.);
 
@@ -77,13 +80,12 @@ mod test {
     #[rstest]
     fn random_test(mut helper: Helper) {
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
-        let mut events = [("event 0", 0), ("event 1", 1)];
+        let mut events = [("event 0", 0), ("event 1", 0)];
 
         // Intervals up to a second. Total up to an hour
         let mut total_dur: Duration = Duration::default();
         let total_count = rng.gen_range(0..(60 * 60));
-        println!("Total count {total_count}");
-        for _ in 0..rng.gen_range(0..(60 * 60)) {
+        for _ in 0..total_count {
             let micros = Duration::from_micros(rng.gen_range(0..1_000_000));
             total_dur += micros;
             helper.clock.increment(micros);
@@ -93,15 +95,15 @@ mod test {
             *count += 1;
         }
 
-        println!("Total passed: {total_dur:?}");
-
         let all_stats = helper.stats.get_all_event_statistic();
         assert_eq!(all_stats.len(), 2);
         for (event, count) in events {
             assert!(all_stats.get(event).is_some());
-            println!("checking \"{event}\", count: {count}");
             assert_abs_diff_eq!(*all_stats.get(event).unwrap() as f64, count as f64 / 60.);
             assert_abs_diff_eq!(helper.stats.get_event_statistic_by_name(event), count as f64 / 60.);
         }
+
+        helper.clock.increment(HOUR);
+        helper.each_equals(0.);
     }
 }

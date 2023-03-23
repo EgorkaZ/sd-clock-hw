@@ -35,6 +35,7 @@ impl HourlyEventStatistic {
         Default::default()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn with_mocked_clock() -> (Self, Arc<quanta::Mock>) {
         let (clock, mock) = Clock::mock();
         let stats = HourlyEventStatistic {
@@ -55,9 +56,9 @@ impl EventsStatistic for HourlyEventStatistic {
         let (_, stat) = self.timestamps.raw_entry_mut().from_key(name)
             .or_insert_with(|| (name.into(), HourlyStat::with_timestamp(now)));
 
-        //
+        let hour_ago = now - Self::HOUR;
         while let Some(ts) = stat.curr_hour.front() {
-            if ts >= &now {
+            if *ts > hour_ago {
                 break;
             }
             stat.curr_hour.pop_front();
@@ -71,11 +72,10 @@ impl EventsStatistic for HourlyEventStatistic {
         let hour_ago = now - Self::HOUR;
         self.timestamps.get(name)
             .map(|stat| (stat, stat.curr_hour.iter()
-                .take_while(|ts| **ts < hour_ago)
+                .take_while(|ts| **ts <= hour_ago)
                 .count() as u64)
             )
             .map(|(stat, old_events)| {
-                println!("found {old_events} expired events");
                 let curr_hour_events = stat.total_count - old_events;
                 curr_hour_events as f64 / Self::MINUTES_IN_HOUR as f64
             })
